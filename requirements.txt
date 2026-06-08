@@ -1,0 +1,7 @@
+numpy
+sympy
+matplotlib
+Pilo
+tqdm
+#torch --index-url https://download.pytorch.org/whl/cu126
+#torchvision --index-url https://download.pytorch.org/whl/cu126
