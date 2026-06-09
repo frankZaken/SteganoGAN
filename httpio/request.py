@@ -13,15 +13,15 @@ class HTTPRequest:
     line_break: bytes = b"\r\n"
 
     def dump(self) -> bytes:
+        body = self.body or b""
         request_line = b" ".join([
             self.method.encode(), self.uri.encode(), self.version.encode()
         ])
+        all_headers = {**self.headers, "Content-Length": str(len(body))}
         headers = self.line_break.join(
-            f"{k}: {v}".encode() for k, v in self.headers.items()
+            f"{k}: {v}".encode() for k, v in all_headers.items()
         )
-        # Use \r\n\r\n to separate headers from body (mirrors HTTP standard and
-        # allows Content-Length-based reading on the server side).
-        return request_line + self.line_break + headers + self.line_break * 2 + self.body
+        return request_line + self.line_break + headers + self.line_break * 2 + body
 
     def __repr__(self) -> str:
         return f"{self.method} {self.uri} {self.version} | body={len(self.body)}B"

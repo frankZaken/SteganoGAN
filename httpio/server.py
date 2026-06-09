@@ -107,6 +107,8 @@ def respond(request: HTTPRequest, endpoints: list[HTTPEndpoint]) -> HTTPResponse
 
     try:
         return endpoint.endpoint(request)
-    except Exception as exc:
-        warnings.warn(f"endpoint {uri} raised: {exc}")
+    except Exception:
+        import traceback
+        print(f"[server] ERROR in {uri}:", flush=True)
+        traceback.print_exc()
         return HTTPResponse(status=500, message="Internal_Server_Error")

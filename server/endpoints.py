@@ -86,6 +86,7 @@ MODELS_TABLE = Table(
         MODELS_MODEL_PATH,
         MODELS_CREATOR,
         MODELS_MODEL_NAME,
+        MODELS_MODEL_DESCRIPTION,
         MODELS_ORIGINAL_IMAGE_PATH
     )
 )
@@ -111,6 +112,13 @@ ENGINE = Engine(path=DB_PATH).open()
 ENGINE.execute(Create(table=USERS_TABLE, exists_ok=True))
 ENGINE.execute(Create(table=MODELS_TABLE, exists_ok=True))
 ENGINE.execute(Create(table=ROOMS_TABLE, exists_ok=True))
+
+# migration: add model_description column if it was created before this field existed
+try:
+    ENGINE.conn.execute("ALTER TABLE models ADD COLUMN model_description TEXT NOT NULL DEFAULT ''")
+    ENGINE.commit()
+except Exception:
+    pass  # column already exists
 
 
 PEPPER = b'B\x88\x0e\x8f]\x11\x8d\x07^\t\x8f\x05E\x86x\xfc'
@@ -295,7 +303,7 @@ def get_model_names(request: HTTPRequest) -> HTTPResponse:
         )
 
     return HTTPResponse(
-        body=json.dumps(model_names).encode(),
+        body=json.dumps({"model_names": model_names}).encode(),
         status=200,
         message="OK"
     )
@@ -307,6 +315,7 @@ def create_room(request: HTTPRequest) -> HTTPResponse:
 
     request body:
         token: JWT token
+
         name: str
         members: list[str]  # other user names.
     """
@@ -369,6 +378,8 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
 
     request body:
         token: JWT token
+
+        name: str
         model_names: list[str] | None
         members: list[str] | None  # other user names.
     """
@@ -419,7 +430,6 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
         updated_fields[ROOMS_MEMBERS] = json.dumps(new_members)
 
     if new_model_names is not None:
-
         admin_models = set(json.loads(get_model_names(request).body))
         new_models = set(new_model_names)
 
@@ -568,9 +578,8 @@ def stego_encode(request: HTTPRequest) -> HTTPResponse:
     original_image_path = selected_model_data[MODELS_ORIGINAL_IMAGE_PATH.name]
 
     stego_images_dir = BASE / "stego_images" / username
-    stego_images_dir.mkdir(parents=True, exist_ok=True)
-
-    stego_image_path = stego_images_dir / f"{model_name}_stego_image.png"
+    stego_image_path = stego_images_dir / model_name / f"{model_name}_stego_image.png"
+    stego_image_path.parent.mkdir(parents=True, exist_ok=True)
 
     encode(
         image_path=original_image_path,
@@ -580,7 +589,7 @@ def stego_encode(request: HTTPRequest) -> HTTPResponse:
     )
 
     return HTTPResponse(
-        body=compress(stego_image_path.read_bytes()).encode(),
+        body=json.dumps({"stego_image": compress(stego_image_path.read_bytes())}).encode(),
         status=200,
         message="OK"
     )
@@ -629,9 +638,9 @@ def stego_decode(request: HTTPRequest) -> HTTPResponse:
     model_path = selected_model_data[MODELS_MODEL_PATH.name]
 
     stego_images_dir = BASE / "stego_images" / username
-    stego_images_dir.mkdir(parents=True, exist_ok=True)
+    stego_image_path = stego_images_dir / model_name / f"{model_name}_stego_image.png"
+    stego_image_path.parent.mkdir(parents=True, exist_ok=True)
 
-    stego_image_path = stego_images_dir / f"{model_name}_stego_image.png"
     stego_image_path.write_bytes(image_data)
 
     message = decode(
@@ -640,7 +649,7 @@ def stego_decode(request: HTTPRequest) -> HTTPResponse:
     )
 
     return HTTPResponse(
-        body=message.encode(),
+        body=json.dumps({"message": message}).encode(),
         status=200,
         message="OK"
     )

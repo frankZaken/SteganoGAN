@@ -64,8 +64,12 @@ class Table:
                 val = normalized.get(field_obj.name, None)
                 result[field_obj.name] = field_obj.load(val) if load else field_obj.dump(val)
         else:
+            use_keys = hasattr(data, "keys")  # sqlite3.Row supports name-based access
             for i, field_obj in enumerate(relevant):
-                val = data[i] if i < len(data) else None
+                if use_keys:
+                    val = data[field_obj.name]
+                else:
+                    val = data[i] if i < len(data) else None
                 result[field_obj.name] = field_obj.load(val) if load else field_obj.dump(val)
 
         return result
