@@ -170,7 +170,7 @@ class SteganoClient:
             raise RuntimeError(f"model training failed: {response.message}")
 
 
-    def stego_encode(self, model_name: str, model_creator: str, message: str) -> str:
+    def stego_encode(self, model_name: str, model_creator: str, message: str) -> bytes:
         self._check_token()
 
         body = {
@@ -190,8 +190,7 @@ class SteganoClient:
         if response.status != 200:
             raise RuntimeError(f"encode failed: {response.message}")
 
-        # TODO: decompress this image data, using a `decompress` function defined in the client.
-        return json.loads(response.body)["stego_image"]
+        return _decompress(json.loads(response.body)["stego_image"])
 
 
     def stego_decode(self, stego_image: str, model_name: str, model_creator: str) -> str:
