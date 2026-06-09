@@ -38,8 +38,8 @@ class SteganoClient:
 
     def __init__(self, server_address: tuple[str, int]):
         self.server_address = server_address
-        self.http_client    = HTTPClient(server_address)
-        self.token:    str | None = None
+        self.http_client = HTTPClient(server_address)
+        self.token: str | None = None
         self.username: str | None = None
 
 
@@ -108,6 +108,11 @@ class SteganoClient:
 
 
     def create_room(self, name: str, members: list[str]):
+        """
+        Creates a room and adds the members to have access to the models in it.
+        :param name: new room name
+        :param members: a list of usernames, as they appear in the Users table of the server DB.
+        """
         self._check_token()
 
         body = {
@@ -128,6 +133,12 @@ class SteganoClient:
 
 
     def update_room(self, name: str, model_names: list[str] | None, members: list[str] | None):
+        """
+        Updates the members and/or models inside the room, selected by the given name.
+        :param name: existing room name top update.
+        :param model_names: The models to set to be available to use for the members of the room.
+        :param members: The list of members (usernames) to set, as they appear in the Users table of the server DB.
+        """
         self._check_token()
 
         body = {
@@ -148,8 +159,25 @@ class SteganoClient:
         if response.status != 200:
             raise RuntimeError(f"room update failed: {response.message}")
 
+    def is_model_training_finished(self, name: str) -> bool:
+        """
+        Sends a request to the server to find out if the model given by the name has finished training.
+        The server assumes this is a model created by the user.
+        :param name: Model name
+        :return: status (bool)
+        """
+        # TODO: Implement as a get request with the token in the headers, and the name in the body. the response body should be {'status': bool}
+
 
     def train_model(self, model_name: str, model_description: str, image_data: bytes):
+        """
+        Sends a request to start training a model, under the clients access.
+        The request is complete as the training stats successfully, and not when it has ended.
+
+        :param model_name: The name of the new model
+        :param model_description:
+        :param image_data: The bytes of the image to embedd any future text message inside of it, using the model.
+        """
         self._check_token()
 
         body = {
@@ -171,6 +199,15 @@ class SteganoClient:
 
 
     def stego_encode(self, model_name: str, model_creator: str, message: str) -> bytes:
+        """
+        Sends a new message to be embedded inside the training image, by the trained model.
+        :param model_name: The name of the model to use.
+        :param model_creator: The name of the creator of the model.
+                              This is for when the user is not the creator,
+                              but has access through a room to the model shared by another creator.
+        :param message: The message to embedd
+        :return: The bytes of a PNG image file.
+        """
         self._check_token()
 
         body = {
@@ -193,7 +230,16 @@ class SteganoClient:
         return _decompress(json.loads(response.body)["stego_image"])
 
 
-    def stego_decode(self, stego_image: str, model_name: str, model_creator: str) -> str:
+    def stego_decode(self, stego_image: bytes, model_name: str, model_creator: str) -> str:
+        """
+        Uploads an image with an embedded message to be recovered by the same model used to hide it.
+        :param stego_image: The bytes of the image wth an embedded message to be recovered.
+        :param model_name: The model that was used to embedd, and also inverts the process.
+        :param model_creator: The name of the creator of the model.
+                              This is for when the user is not the creator,
+                              but has access through a room to the model shared by another creator.
+        :return: The recovered text message.
+        """
         self._check_token()
 
         body = {

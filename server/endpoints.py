@@ -6,6 +6,7 @@ import hashlib
 import secrets
 import zlib
 from pathlib import Path
+import threading
 
 from httpio import HTTPRequest, HTTPResponse
 
@@ -459,6 +460,39 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
     return HTTPResponse(status=200, message="OK")
 
 
+def _finetune_endpoint(
+    user_name: str,
+    model_name: str,
+    model_description: str,
+    dataset_dir: str,
+    output_path: str,
+    target_image: str,
+):
+    finetune(
+        dataset_dir=dataset_dir,
+        base_checkpoint=str(PROJECT_ROOT / "stegano" / "training" / "checkpoints" / "checkpoint_epoch_0050.pt"),
+        target_image=target_image,
+        output_path=output_path
+    )
+
+    insert_model = Insert(
+        table=MODELS_TABLE
+    ).values(
+        [
+            {
+                MODELS_MODEL_PATH: output_path,
+                MODELS_CREATOR: user_name,
+                MODELS_MODEL_NAME: model_name,
+                MODELS_MODEL_DESCRIPTION: model_description,
+                MODELS_ORIGINAL_IMAGE_PATH: target_image
+            }
+        ]
+    )
+
+    ENGINE.execute(insert_model)
+    ENGINE.commit()
+
+
 def train_model(request: HTTPRequest) -> HTTPResponse:
     """
     Gets a base image from the user and trains a model on it.
@@ -510,31 +544,33 @@ def train_model(request: HTTPRequest) -> HTTPResponse:
 
     finetuned_model_path = str(SERVER_DATA_ROOT / "finetuned_models" / username / f"{model_name}.pt")
 
-    finetune(
+    f = lambda: _finetune_endpoint(
+        user_name=username,
+        model_name=model_name,
         dataset_dir=str(datasets_dir),
-        base_checkpoint = str(PROJECT_ROOT / "stegano" / "training" / "checkpoints" / "checkpoint_epoch_0050.pt"),
         target_image=str(original_image_path),
-        output_path=finetuned_model_path
-     )
-
-    insert_model = Insert(
-        table=MODELS_TABLE
-    ).values(
-        [
-            {
-                MODELS_MODEL_PATH: finetuned_model_path,
-                MODELS_CREATOR: username,
-                MODELS_MODEL_NAME: model_name,
-                MODELS_MODEL_DESCRIPTION: model_description,
-                MODELS_ORIGINAL_IMAGE_PATH: original_image_path
-            }
-        ]
+        output_path=finetuned_model_path,
+        model_description=model_description
     )
 
-    ENGINE.execute(insert_model)
-    ENGINE.commit()
+    threading.Thread(target=f).start()
 
     return HTTPResponse(status=200, message="OK")
+
+
+def model_exists(request: HTTPRequest) -> HTTPResponse:
+    """
+    Returns a boolean flag for the existence of the model, as a model created by the user.
+
+    request body:
+        token: JWT token
+        model_name: str
+
+    response body:
+        status: bool
+
+    :return:
+    """
 
 
 def stego_encode(request: HTTPRequest) -> HTTPResponse:
