@@ -12,7 +12,6 @@ class UserPage:
         self.session = router.session
 
     def _logout(self, e):
-        from api.auth import log_out
         log_out(self.router.session)
         self.router.session = None
         self.router.go("/")

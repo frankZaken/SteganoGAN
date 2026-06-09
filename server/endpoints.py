@@ -106,8 +106,13 @@ ROOMS_TABLE = Table(
     )
 )
 
-DB_PATH = "../db.sqlite3"
-ENGINE = Engine(path=DB_PATH).open()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SERVER_DATA_ROOT = PROJECT_ROOT / "data"
+DB_PATH = SERVER_DATA_ROOT / "db.sqlite3"
+
+SERVER_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+ENGINE = Engine(path=str(DB_PATH)).open()
 
 ENGINE.execute(Create(table=USERS_TABLE, exists_ok=True))
 ENGINE.execute(Create(table=MODELS_TABLE, exists_ok=True))
@@ -395,17 +400,18 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
     room_name = request_body["name"]
     new_members: list[str] = request_body.get("members")
 
-    for member in new_members:
-        select_member = Select(
-            table=USERS_TABLE,
-            statement=USERS_USERNAME == value(member)
-        )
+    if new_members is not None:
+        for member in new_members:
+            select_member = Select(
+                table=USERS_TABLE,
+                statement=USERS_USERNAME == value(member)
+            )
 
-        for _ in ENGINE.execute(select_member):
-            break
+            for _ in ENGINE.execute(select_member):
+                break
 
-        else:
-            return HTTPResponse(status=404, message="member not found.")
+            else:
+                return HTTPResponse(status=404, message="member not found.")
 
     new_model_names = request_body.get("model_names")
     admin_rooms_statement = (ROOMS_NAME == value(room_name)) & (ROOMS_ADMIN == value(username))
@@ -430,10 +436,10 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
         updated_fields[ROOMS_MEMBERS] = json.dumps(new_members)
 
     if new_model_names is not None:
-        admin_models = set(json.loads(get_model_names(request).body))
+        admin_models = set(json.loads(get_model_names(request).body)["model_names"])
         new_models = set(new_model_names)
 
-        if not admin_models.issubset(new_models):
+        if not new_models.issubset(admin_models):
             return HTTPResponse(status=404, message="invalid models list.")
 
         updated_fields[ROOMS_MODEL_NAMES] = json.dumps(new_model_names)
@@ -452,8 +458,6 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
 
     return HTTPResponse(status=200, message="OK")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-BASE = Path(__file__).parent
 
 def train_model(request: HTTPRequest) -> HTTPResponse:
     """
@@ -490,13 +494,13 @@ def train_model(request: HTTPRequest) -> HTTPResponse:
     if existing:
         return HTTPResponse(status=404, message="model already exists.")
 
-    original_images_dir = BASE / "original_images" / username
+    original_images_dir = SERVER_DATA_ROOT / "original_images" / username
     original_images_dir.mkdir(parents=True, exist_ok=True)
 
     original_image_path = str(original_images_dir / f"{model_name}_original_image.jpg")
     Path(original_image_path).write_bytes(image_data)
 
-    datasets_dir = BASE / "finetune_datasets" / username / model_name
+    datasets_dir = SERVER_DATA_ROOT / "finetune_datasets" / username / model_name
     datasets_dir.mkdir(parents=True, exist_ok=True)
 
     prepare_dataset(
@@ -504,7 +508,7 @@ def train_model(request: HTTPRequest) -> HTTPResponse:
         output_dir=datasets_dir
     )
 
-    finetuned_model_path = str(BASE / "finetuned_models" / username / f"{model_name}.pt")
+    finetuned_model_path = str(SERVER_DATA_ROOT / "finetuned_models" / username / f"{model_name}.pt")
 
     finetune(
         dataset_dir=str(datasets_dir),
@@ -577,7 +581,7 @@ def stego_encode(request: HTTPRequest) -> HTTPResponse:
     model_path = selected_model_data[MODELS_MODEL_PATH.name]
     original_image_path = selected_model_data[MODELS_ORIGINAL_IMAGE_PATH.name]
 
-    stego_images_dir = BASE / "stego_images" / username
+    stego_images_dir = SERVER_DATA_ROOT / "stego_images" / username
     stego_image_path = stego_images_dir / model_name / f"{model_name}_stego_image.png"
     stego_image_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -637,7 +641,7 @@ def stego_decode(request: HTTPRequest) -> HTTPResponse:
 
     model_path = selected_model_data[MODELS_MODEL_PATH.name]
 
-    stego_images_dir = BASE / "stego_images" / username
+    stego_images_dir = SERVER_DATA_ROOT / "stego_images" / username
     stego_image_path = stego_images_dir / model_name / f"{model_name}_stego_image.png"
     stego_image_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -709,7 +713,8 @@ def test_get_model_names():
                     MODELS_MODEL_PATH: new_model["model_path"],
                     MODELS_CREATOR: new_model["creator"],
                     MODELS_MODEL_NAME: new_model["model_name"],
-                    MODELS_ORIGINAL_IMAGE_PATH: new_model["original_image_path"]
+                    MODELS_ORIGINAL_IMAGE_PATH: new_model["original_image_path"],
+                    MODELS_MODEL_DESCRIPTION: new_model.get('model_description', 'description...')
                 }
             ]
         )
@@ -857,11 +862,13 @@ def test_stego_decode():
 
     token = login_response.headers["token"]
 
-    stego_image = (BASE / "stego_images/peleg/test_model_stego_image.png").read_bytes()
+    model_name = "test_model"
+
+    stego_image = (SERVER_DATA_ROOT / f"stego_images/peleg/{model_name}/{model_name}_stego_image.png").read_bytes()
 
     body = {
         "stego_image": compress(stego_image),
-        "model_name": "test_model",
+        "model_name": model_name,
         "model_creator": "peleg"
     }
 
@@ -879,15 +886,15 @@ def test_stego_decode():
 
 
 def main():
-    # test_signin()
-    # test_login()
-    #
-    # test_create_room()
-    # test_update_room()
-    #
-    # test_get_model_names()
-    #
-    # test_train_model()
+    test_signin()
+    test_login()
+
+    test_create_room()
+    test_update_room()
+
+    test_get_model_names()
+
+    test_train_model()
     test_stego_encode()
     test_stego_decode()
 

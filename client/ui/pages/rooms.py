@@ -13,7 +13,6 @@ class RoomsPage:
         self.rooms   = {"owned": [], "joined": []}
 
     def _load_rooms(self):
-        from api.api_room_manager import get_my_rooms
         self.rooms = get_my_rooms(self.session.user_id)
 
     def _create_room_dialog(self):
@@ -24,7 +23,6 @@ class RoomsPage:
             name = name_field.value.strip()
             if not name:
                 return
-            from api.api_room_manager import create_room
             room_id, auth_key, _ = create_room(self.session.user_id, name)
             key_label.value      = f"Room ID: {room_id}   Auth Key: {auth_key}"
             self.page.update()
@@ -51,7 +49,6 @@ class RoomsPage:
         msg_label = ft.Text("", size=13)
 
         def do_join(e):
-            from api.api_room_manager import join_room
             try:
                 room_id = int(id_field.value.strip())
                 ok = join_room(self.session.user_id, room_id, key_field.value.strip())

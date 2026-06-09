@@ -17,8 +17,6 @@ class SharedPage:
     def build(self) -> ft.Control:
         self.page.services.append(self._encode_picker)
 
-        from api.api_share_manager import get_shared_with_me, remove_share
-
         shares = get_shared_with_me(self.session.user_id)
 
         def share_card(share: dict) -> ft.Control:
@@ -191,7 +189,6 @@ class SharedPage:
             return
 
         import time
-        from api.api_model_manager import encode_with_model, CREATIONS_DIR
 
         out_dir = CREATIONS_DIR / f"user_{self.session.user_id}"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -199,7 +196,6 @@ class SharedPage:
 
         try:
             encode_with_model(self._active_model_id, self._picked_path, msg, out_path)
-            from api.api_model_manager import _client as _get_client
             _get_client().creation_add(self.session.user_id, self._active_model_id,
                                        self._picked_path, out_path)
             self.page.pop_dialog()
@@ -227,6 +223,5 @@ class SharedPage:
         ))
 
     def _remove(self, share_id: int):
-        from api.api_share_manager import remove_share
         remove_share(share_id)
         self.router.go("/shared")

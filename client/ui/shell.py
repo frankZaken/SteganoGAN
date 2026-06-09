@@ -96,7 +96,6 @@ class Shell:
         rooms_join = []
         if session:
             try:
-                from api.api_room_manager import get_my_rooms
                 data       = get_my_rooms(session.user_id)
                 rooms_own  = data.get("owned",  [])
                 rooms_join = data.get("joined", [])
@@ -414,7 +413,6 @@ class Shell:
         ))
 
     def _logout_and_go(self, route: str):
-        from api.auth import log_out
         log_out(self.router.session)
         self.router.session = None
         self.router._shell  = None
@@ -432,7 +430,7 @@ class Shell:
                 msg_ctrl.color = theme.ERROR
                 self.page.update()
                 return
-            from api.auth import change_password
+
             ok, err = change_password(self.router.session, pw_field.value)
             if ok:
                 msg_ctrl.value = "Password updated!"
@@ -469,7 +467,7 @@ class Shell:
                 self.router.show_snack("Username doesn't match.", color=theme.ERROR)
                 self.page.pop_dialog()
                 return
-            from api.auth import delete_account
+
             delete_account(self.router.session)
             self.router.session = None
             self.router._shell  = None

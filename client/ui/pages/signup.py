@@ -25,7 +25,6 @@ class SignupPage:
         self.status_text.value = "Creating account..."
         self.page.update()
 
-        from api.auth import sign_up
         ok, msg = sign_up(self.username_field.value, self.password_field.value)
         if not ok:
             self.error_text.value  = msg

@@ -27,14 +27,6 @@ class RoomPage:
     def build(self) -> ft.Control:
         self.page.services.extend([self._encode_picker, self._img_msg_picker])
 
-        from api.api_room_manager import (
-            get_room_by_id, get_room_models_detailed,
-            get_room_setting, add_model_to_room,
-            remove_model_from_room, set_room_setting,
-            get_inbox,
-        )
-        from api.api_model_manager import get_user_models
-        from api.api_model_manager import _client as _get_client
         get_user_by_id = lambda uid: _get_client().get_user_by_id(uid)
 
         room = get_room_by_id(self.room_id)
@@ -179,7 +171,6 @@ class RoomPage:
             except Exception:
                 pass
             try:
-                from api.api_room_manager import send_image_message
                 send_image_message(self.room_id, self.session.user_id, files[0].path)
                 self._send_status.value = "Image sent!"
                 self._send_status.color = theme.SUCCESS
@@ -197,7 +188,6 @@ class RoomPage:
             if not text:
                 return
             try:
-                from api.api_room_manager import send_text_message
                 send_text_message(self.room_id, self.session.user_id, text)
                 self._text_input.value  = ""
                 self._send_status.value = ""
@@ -396,7 +386,6 @@ class RoomPage:
         def do_add(e):
             if selected["id"] is None:
                 return
-            from api.api_room_manager import add_model_to_room
             add_model_to_room(self.room_id, selected["id"], self.session.user_id)
             self.page.pop_dialog()
             self.router.go("/room")
@@ -474,9 +463,6 @@ class RoomPage:
             self.router.show_snack("Message cannot be empty.", color=theme.ERROR)
             return
 
-        import time
-        from api.api_model_manager import encode_with_model, CREATIONS_DIR
-
         out_dir = CREATIONS_DIR / f"user_{self.session.user_id}"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = str(out_dir / f"stego_{int(time.time())}.png")
@@ -507,10 +493,8 @@ class RoomPage:
     # â”€â”€ Settings helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _toggle_allow(self, value: bool):
-        from api.api_room_manager import set_room_setting
         set_room_setting(self.room_id, value)
 
     def _remove_and_refresh(self, entry_id: int):
-        from api.api_room_manager import remove_model_from_room
         remove_model_from_room(entry_id)
         self.router.go("/room")

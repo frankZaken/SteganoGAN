@@ -14,7 +14,6 @@ class LoginPage:
         self.error_text     = ft.Text("", color=theme.ERROR, size=13)
 
     def _on_login(self, e):
-        from api.auth import log_in
         ok, session = log_in(
             self.username_field.value,
             self.password_field.value,

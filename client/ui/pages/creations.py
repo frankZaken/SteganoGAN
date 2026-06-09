@@ -13,11 +13,9 @@ class CreationsPage:
         self.session = router.session
 
     def _load(self) -> list[dict]:
-        from api.api_model_manager import _client
         return _client().creation_list(self.session.user_id)
 
     def _delete(self, creation: dict):
-        from api.api_model_manager import _client
         _client().creation_delete(creation["id"])
         self.router.go("/creations")
 

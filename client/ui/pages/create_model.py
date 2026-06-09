@@ -48,9 +48,6 @@ class CreateModelPage:
             self.train_btn.disabled = True
         self.page.update()
 
-        from api.api_model_manager import train_model_async
-        from client.api import jobs as job_store
-
         job_id = job_store.start(name)
 
         def on_progress(step: str, percent: int):

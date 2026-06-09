@@ -19,7 +19,6 @@ class ModelsPage:
         self._decode_picker = ft.FilePicker()
 
     def _load_models(self):
-        from api.api_model_manager import get_user_models
         self.models = get_user_models(self.session.user_id)
 
     # â”€â”€ Encode dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

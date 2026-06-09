@@ -12,8 +12,6 @@ class SendPage:
         self.session = router.session
 
     def build(self) -> ft.Control:
-        from api.api_model_manager import get_user_models
-
         models = get_user_models(self.session.user_id)
 
         selected  = {"id": None}
@@ -65,7 +63,6 @@ class SendPage:
                 self.page.update()
                 return
 
-            from api.api_share_manager import send_model_to_user
             ok, err = send_model_to_user(self.session.user_id, name, selected["id"])
             if ok:
                 status.value = f"Model sent to {name}!"
