@@ -1,4 +1,5 @@
 # stegano2/training/finetuner.py
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -12,8 +13,7 @@ from tqdm import tqdm
 from ..gan.generator     import InvertibleGenerator, MSG_CH_START, MSG_CH_END, squeeze as gen_squeeze
 from ..gan.discriminator import Discriminator
 from ..core.message      import pack_message, unpack_message
-from ..core.image        import save_16bit_png
-
+from ..core.image import save_16bit_png, load_image
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -88,12 +88,15 @@ def quantize_like_16bit_png(stego: torch.Tensor) -> torch.Tensor:
 
 # ── Fine-tuning loop ───────────────────────────────────────────────────────────
 
+def get_status(epoch: int, num_epochs: int) -> int:
+    return round((epoch / num_epochs) * 100)
+
 def finetune(
-    dataset_dir:     str,
+    dataset_dir: str,
     base_checkpoint: str,
-    output_path:     str,
-    target_image:    str = None,
-    on_epoch=        None,   # optional: callable(epoch: int, total: int)
+    output_path: str,
+    target_image: str | None = None,
+    on_epoch: Callable[[int, int], int] | None = get_status
 ):
     device = torch.device(
         "cuda" if torch.cuda.is_available() else
@@ -125,8 +128,8 @@ def finetune(
     l1  = nn.L1Loss()
 
     target_tensor = None
+
     if target_image:
-        from ..core.image import load_image
         target_tensor, _ = load_image(target_image)
         target_tensor = target_tensor.to(device)
 
@@ -247,7 +250,7 @@ def finetune(
             }, out_path)
 
         if on_epoch:
-            on_epoch(epoch, NUM_EPOCHS)
+            yield on_epoch(epoch, NUM_EPOCHS)
 
     print(f"\n✓ Fine-tuning complete. Best PSNR: {best_psnr:.2f} dB")
     print(f"  Fine-tuned model: {out_path}")

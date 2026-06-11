@@ -8,22 +8,22 @@ from pathlib import Path
 from httpio import HTTPClient, HTTPRequest
 
 
-def _compress(image: bytes) -> str:
+def _compress(image: bytes) -> bytes:
     compressed = zlib.compress(image, level=9)
 
     if len(compressed) < len(image):
         payload = b"Z" + compressed
+
     else:
         payload = b"R" + image
 
-    return base64.b64encode(payload).decode()
+    return payload
 
 
-def _decompress(data: str) -> bytes:
-    payload = base64.b64decode(data)
+def _decompress(data: bytes) -> bytes:
 
-    mode = payload[:1]
-    content = payload[1:]
+    mode = data[:1]
+    content = data[1:]
 
     if mode == b"Z":
         return zlib.decompress(content)
@@ -183,7 +183,7 @@ class SteganoClient:
         body = {
             "model_name":  model_name,
             "model_description": model_description,
-            "image_data": _compress(image_data),
+            "image_data": base64.b64encode(_compress(image_data)).decode(),
         }
 
         response = self.http_client.open(
@@ -227,7 +227,7 @@ class SteganoClient:
         if response.status != 200:
             raise RuntimeError(f"encode failed: {response.message}")
 
-        return _decompress(json.loads(response.body)["stego_image"])
+        return _decompress(base64.b64encode(json.loads(response.body)["stego_image"]))
 
 
     def stego_decode(self, stego_image: bytes, model_name: str, model_creator: str) -> str:

@@ -10,6 +10,9 @@ from .request  import HTTPRequest, load_request
 from .response import HTTPResponse
 
 
+# TODO: Creates RSA key pair for the server. The public key should be hardcoded in the client, as the privet key should be hardcoded in the server.
+
+
 class HTTPServer:
     def __init__(self, endpoints: list[HTTPEndpoint], headers: dict[str,  Any] | None = None):
         self.endpoints = endpoints
@@ -54,13 +57,21 @@ class HTTPServer:
         if client is None:
             client, _ = self.server.accept()
 
+        # TODO: Use Diffie-Hellman key exchange, where the client encrypts his public number, using the server's public key.
+        # TODO: Having a secret key, it will be a seed for a cryptographic generator, to generate AES and HMAC keys, as well as IV for the AES model.
+        # TODO: Make sure there are 2 sets of keys generated (aes-key, hmac-key, iv) for each direction (server -> client, client -> server)
+        # TODO first keys set: server -> client, second keys set: client -> server
+
         data = self._recv_full(client)
 
         if not data:
             return
 
+        # TODO: Decrypt data using (client -> server)
+
         try:
             request = load_request(data)
+
         except ValueError as e:
             warnings.warn(f"bad request: {e}")
             client.send(HTTPResponse(status=400, message="Bad_Request").dump())
@@ -69,11 +80,17 @@ class HTTPServer:
 
             return
 
+        print(request)
+
         response = respond(request, self.endpoints)
         response.headers.update(
             {k: v for k, v in self.headers.items() if k not in response.headers}
         )
 
+        print(response)
+        print()
+
+        # TODO: Encrypt response.dump AES(AES-KEY).Mode(IV) + HMAC(HMAC-KEY) using (client -> server)
         client.send(response.dump())
         if close:
             client.close()
@@ -84,6 +101,7 @@ class HTTPServer:
         print(f"[server] listening on {address[0]}:{address[1]}")
         while True:
             client, addr = self.server.accept()
+            print(addr)
             t = threading.Thread(target=self.handle, args=(client,))
             t.start()
 

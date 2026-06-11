@@ -80,6 +80,7 @@ MODELS_CREATOR = Field("creator", str, primary=False, unique=False, nullable=Fal
 MODELS_MODEL_NAME = Field("model_name", str, primary=False, unique=False, nullable=False)
 MODELS_MODEL_DESCRIPTION = Field("model_description", str, primary=False, unique=False, nullable=False)
 MODELS_ORIGINAL_IMAGE_PATH = Field("original_image_path", str, primary=False, unique=False, nullable=False)
+MODELS_MODEL_STATUS = Field("model_status", str, primary=False, unique=False, nullable=False)
 
 MODELS_TABLE = Table(
     name="models",
@@ -88,7 +89,8 @@ MODELS_TABLE = Table(
         MODELS_CREATOR,
         MODELS_MODEL_NAME,
         MODELS_MODEL_DESCRIPTION,
-        MODELS_ORIGINAL_IMAGE_PATH
+        MODELS_ORIGINAL_IMAGE_PATH,
+        MODELS_MODEL_STATUS
     )
 )
 
@@ -122,6 +124,12 @@ ENGINE.execute(Create(table=ROOMS_TABLE, exists_ok=True))
 # migration: add model_description column if it was created before this field existed
 try:
     ENGINE.conn.execute("ALTER TABLE models ADD COLUMN model_description TEXT NOT NULL DEFAULT ''")
+    ENGINE.commit()
+except Exception:
+    pass  # column already exists
+
+try:
+    ENGINE.conn.execute("ALTER TABLE models ADD COLUMN model_status TEXT NOT NULL DEFAULT '0'")
     ENGINE.commit()
 except Exception:
     pass  # column already exists
@@ -163,23 +171,22 @@ def auth_token(request: HTTPRequest) -> str:
     return token_to_username(token)
 
 
-
-def compress(image: bytes) -> str:
+def compress(image: bytes) -> bytes:
     compressed = zlib.compress(image, level=9)
 
     if len(compressed) < len(image):
         payload = b"Z" + compressed
+
     else:
         payload = b"R" + image
 
-    return base64.b64encode(payload).decode()
+    return payload
 
 
-def decompress(data: str) -> bytes:
-    payload = base64.b64decode(data)
+def decompress(data: bytes) -> bytes:
 
-    mode = payload[:1]
-    content = payload[1:]
+    mode = data[:1]
+    content = data[1:]
 
     if mode == b"Z":
         return zlib.decompress(content)
@@ -461,35 +468,59 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
 
 
 def _finetune_endpoint(
-    user_name: str,
+    username: str,
     model_name: str,
-    model_description: str,
     dataset_dir: str,
     output_path: str,
     target_image: str,
 ):
-    finetune(
+    yield from finetune(
         dataset_dir=dataset_dir,
         base_checkpoint=str(PROJECT_ROOT / "stegano" / "training" / "checkpoints" / "checkpoint_epoch_0050.pt"),
         target_image=target_image,
         output_path=output_path
     )
 
-    insert_model = Insert(
-        table=MODELS_TABLE
-    ).values(
-        [
-            {
-                MODELS_MODEL_PATH: output_path,
-                MODELS_CREATOR: user_name,
-                MODELS_MODEL_NAME: model_name,
-                MODELS_MODEL_DESCRIPTION: model_description,
-                MODELS_ORIGINAL_IMAGE_PATH: target_image
-            }
-        ]
+    update_model = (
+        Update(table=MODELS_TABLE)
+        .set({MODELS_MODEL_PATH: output_path})
+        .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name)))
     )
 
-    ENGINE.execute(insert_model)
+    ENGINE.execute(update_model)
+    ENGINE.commit()
+
+
+class StatusTracker:
+    def __init__(self):
+        self.status: int | None = None
+
+status_tracker = StatusTracker()
+
+def run_and_track(generator, tracker_obj, username: str, model_name: str):
+
+    for s in generator:
+        tracker_obj.status = s
+
+        update_status = (
+            Update(table=MODELS_TABLE)
+            .set({MODELS_MODEL_STATUS: tracker_obj.status})
+            .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name)))
+        )
+
+        ENGINE.execute(update_status)
+        ENGINE.commit()
+
+        print(f"[TRACKER] Live Status Updated: {tracker_obj.status}")
+
+    update_status = (
+        Update(table=MODELS_TABLE)
+        .set({MODELS_MODEL_STATUS: 100})
+        .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name))
+        )
+    )
+
+    ENGINE.execute(update_status)
     ENGINE.commit()
 
 
@@ -515,7 +546,7 @@ def train_model(request: HTTPRequest) -> HTTPResponse:
 
     model_name = request_body["model_name"]
     model_description = request_body["model_description"]
-    image_data = decompress(request_body["image_data"])
+    image_data = decompress(base64.b64decode(request_body["image_data"].encode()))
 
     existing = next(iter(
             ENGINE.execute(
@@ -539,21 +570,44 @@ def train_model(request: HTTPRequest) -> HTTPResponse:
 
     prepare_dataset(
         image_path=original_image_path,
-        output_dir=datasets_dir
+        output_dir=datasets_dir,
+        num_images=50,
+        num_real_crops=100
     )
 
     finetuned_model_path = str(SERVER_DATA_ROOT / "finetuned_models" / username / f"{model_name}.pt")
 
-    f = lambda: _finetune_endpoint(
-        user_name=username,
+    insert_model = Insert(
+        table=MODELS_TABLE
+    ).values(
+        [
+            {
+                MODELS_MODEL_PATH: "None",
+                MODELS_CREATOR: username,
+                MODELS_MODEL_NAME: model_name,
+                MODELS_MODEL_DESCRIPTION: model_description,
+                MODELS_ORIGINAL_IMAGE_PATH: str(original_image_path),
+                MODELS_MODEL_STATUS: 0
+            }
+        ]
+    )
+
+    ENGINE.execute(insert_model)
+    ENGINE.commit()
+
+    generator_instance = _finetune_endpoint(
+        username=username,
         model_name=model_name,
         dataset_dir=str(datasets_dir),
         target_image=str(original_image_path),
         output_path=finetuned_model_path,
-        model_description=model_description
     )
 
-    threading.Thread(target=f).start()
+    threading.Thread(
+        target=run_and_track,
+        args=(generator_instance, status_tracker, username, model_name),
+        daemon=True
+    ).start()
 
     return HTTPResponse(status=200, message="OK")
 
@@ -571,6 +625,79 @@ def model_exists(request: HTTPRequest) -> HTTPResponse:
 
     :return:
     """
+
+
+def get_model_status(request: HTTPRequest) -> HTTPResponse:
+    """
+    Returns the training progress (0-100) of a model owned by the authenticated user.
+
+    request body:
+        token: JWT token  (in headers)
+        model_name: str
+
+    response body:
+        status: int  (0-100)
+    """
+
+    try:
+        username = auth_token(request)
+
+    except:
+        return HTTPResponse(status=404, message="invalid token/token not found.")
+
+    request_body = json.loads(request.body)
+    model_name = request_body["model_name"]
+
+    select_model = (
+        Select(table=MODELS_TABLE)
+        .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name)))
+    )
+
+    selected_model_data = next(iter(ENGINE.execute(select_model)), None)
+
+    if selected_model_data is None:
+        return HTTPResponse(status=404, message="model doesn't exist.")
+
+    status = selected_model_data[MODELS_MODEL_STATUS.name]
+
+    return HTTPResponse(body=json.dumps({"status": status}).encode(), status=200, message="OK")
+
+
+def model_training_done(request: HTTPRequest) -> HTTPResponse:
+    """
+    Returns whether the model has finished training.
+
+    request body:
+        model_name: str  (in body)
+
+    request headers:
+        token: JWT token
+
+    response body:
+        status: bool
+    """
+
+    try:
+        username = auth_token(request)
+    except:
+        return HTTPResponse(status=404, message="invalid token/token not found.")
+
+    request_body = json.loads(request.body)
+    model_name = request_body["model_name"]
+
+    select_model = (
+        Select(table=MODELS_TABLE)
+        .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name)))
+    )
+
+    selected_model_data = next(iter(ENGINE.execute(select_model)), None)
+
+    if selected_model_data is None:
+        return HTTPResponse(status=404, message="model doesn't exist.")
+
+    done = int(selected_model_data[MODELS_MODEL_STATUS.name]) == 100
+
+    return HTTPResponse(body=json.dumps({"status": done}).encode(), status=200, message="OK")
 
 
 def stego_encode(request: HTTPRequest) -> HTTPResponse:
@@ -629,7 +756,11 @@ def stego_encode(request: HTTPRequest) -> HTTPResponse:
     )
 
     return HTTPResponse(
-        body=json.dumps({"stego_image": compress(stego_image_path.read_bytes())}).encode(),
+        body=json.dumps(
+            {
+                "stego_image": base64.b64encode(compress(stego_image_path.read_bytes())).decode()
+            }
+        ).encode(),
         status=200,
         message="OK"
     )
@@ -658,7 +789,7 @@ def stego_decode(request: HTTPRequest) -> HTTPResponse:
 
     request_body = json.loads(request.body)
 
-    image_data = decompress(request_body["stego_image"])
+    image_data = decompress(base64.b64decode(request_body["stego_image"].encode()))
     model_name = request_body["model_name"]
     creator = request_body["model_creator"]
 
@@ -724,46 +855,8 @@ def test_get_model_names():
     login_response = login(login_request)
     token = login_response.headers["token"]
 
-    new_model = {
-        "model_path": "path",
-        "creator": "peleg",
-        "model_name": "the model",
-        "original_image_path": "image"
-    }
-
-    model_exist: bool = False
-
-    select_model = Select(
-        table=MODELS_TABLE,
-        statement=MODELS_CREATOR == value("peleg")
-    )
-
-    for _ in ENGINE.execute(select_model):
-        model_exist = True
-        break
-
-    if not model_exist:
-        insert_user = Insert(table=MODELS_TABLE).values(
-            [
-                {
-                    MODELS_MODEL_PATH: new_model["model_path"],
-                    MODELS_CREATOR: new_model["creator"],
-                    MODELS_MODEL_NAME: new_model["model_name"],
-                    MODELS_ORIGINAL_IMAGE_PATH: new_model["original_image_path"],
-                    MODELS_MODEL_DESCRIPTION: new_model.get('model_description', 'description...')
-                }
-            ]
-        )
-
-        ENGINE.execute(insert_user)
-        ENGINE.commit()
-
-    else:
-        request = HTTPRequest(headers={"token": token})
-        response = get_model_names(request)
-
-        print(json.loads(response.body))
-
+    # TODO: build the correct request
+    # get_model_names()
 
 def test_create_room():
     print("\ncreate room")
@@ -839,7 +932,7 @@ def test_train_model():
     body = {
         "model_name": "test_model",
         "model_description": "test description",
-        "image_data": compress(image_data)
+        "image_data": base64.b64encode(compress(image_data)).decode(),
     }
 
     request = HTTPRequest(
@@ -903,7 +996,7 @@ def test_stego_decode():
     stego_image = (SERVER_DATA_ROOT / f"stego_images/peleg/{model_name}/{model_name}_stego_image.png").read_bytes()
 
     body = {
-        "stego_image": compress(stego_image),
+        "stego_image": base64.b64encode(compress(stego_image)).decode(),
         "model_name": model_name,
         "model_creator": "peleg"
     }
@@ -928,7 +1021,7 @@ def main():
     test_create_room()
     test_update_room()
 
-    test_get_model_names()
+    # test_get_model_names()
 
     test_train_model()
     test_stego_encode()

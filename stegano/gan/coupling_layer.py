@@ -49,7 +49,6 @@ class AffineCouplingLayer(nn.Module):
 
         self.half = channels // 2
 
-        # Network takes half the channels, outputs s and t (so old_testing_output = full channels)
         self.net = ScaleAndTranslateNetwork(
             in_channels=self.half,
             hidden_channels=hidden_channels,
@@ -82,15 +81,12 @@ class AffineCouplingLayer(nn.Module):
 def main():
     layer = AffineCouplingLayer(channels=12, hidden_channels=32)
 
-    # Random input — batch of 2, 12 channels, 16×16 spatial
     x = torch.randn(2, 12, 16, 16)
 
-    # Forward
     y = layer(x)
     print(f"Input shape:  {x.shape}")
     print(f"Output shape: {y.shape}")
 
-    # Inverse — should recover x exactly
     x_recovered = layer.inverse(y)
 
     error = (x - x_recovered).abs().max().item()
