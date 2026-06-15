@@ -13,35 +13,45 @@ MSG_CH_END   = 12
 
 def squeeze(x: Tensor) -> Tensor:
     B, C, H, W = x.shape
+
     x = x.reshape(B, C, H//2, 2, W//2, 2)
     x = x.permute(0, 1, 3, 5, 2, 4)
     x = x.reshape(B, C*4, H//2, W//2)
+
     return x
 
 
 def unsqueeze(x: Tensor) -> Tensor:
     B, C4, Hs, Ws = x.shape
     C = C4 // 4
+
     x = x.reshape(B, C, 2, 2, Hs, Ws)
     x = x.permute(0, 1, 4, 2, 5, 3)
     x = x.reshape(B, C, Hs*2, Ws*2)
+
     return x
 
 def inject_message(latent: Tensor, bits: Tensor) -> Tensor:
     B, C, Hs, Ws = latent.shape
     msg_channels = MSG_CH_END - MSG_CH_START   # = 4
+
     signal = bits * (2.0 * MSG_SCALE) - MSG_SCALE   # {-5, +5}
     signal = signal.reshape(B, msg_channels, Hs, Ws)
+
     latent = latent.clone()
     latent[:, MSG_CH_START:MSG_CH_END] = signal
+
     return latent
 
 def extract_message(latent: Tensor, num_bits: int) -> Tensor:
     B = latent.shape[0]
     msg_channels = latent[:, MSG_CH_START:MSG_CH_END]   # (B, 4, Hs, Ws)
+
     flat = msg_channels.reshape(B, -1)
     flat = flat[:, :num_bits]
+
     bits = (flat > 0).float()
+
     return bits
 
 
@@ -49,6 +59,7 @@ class InvertibleGenerator(nn.Module):
 
     def __init__(self, hidden_channels: int = 64, num_layers: int = 8):
         super().__init__()
+
         latent_channels = 12
         self.coupling_layers = nn.ModuleList(
             [
@@ -56,6 +67,7 @@ class InvertibleGenerator(nn.Module):
                     channels=latent_channels,
                     hidden_channels=hidden_channels,
                 )
+
                 for _ in range(num_layers)
             ]
         )
@@ -67,14 +79,18 @@ class InvertibleGenerator(nn.Module):
     def encode(self, cover: torch.Tensor, bits: torch.Tensor) -> torch.Tensor:
         latent = squeeze(cover)
         latent = inject_message(latent, bits)
+
         for layer in self.coupling_layers:
             latent = layer(latent)
+
         return unsqueeze(latent)
 
     def decode(self, stego: torch.Tensor, num_bits: int) -> torch.Tensor:
         latent = squeeze(stego)
+
         for layer in reversed(self.coupling_layers):
             latent = layer.inverse(latent)
+
         return extract_message(latent, num_bits)
 
 

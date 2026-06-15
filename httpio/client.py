@@ -11,7 +11,7 @@ from .response import HTTPResponse, load_response
 class HTTPClient:
     server_address: tuple
     client_address: tuple = None
-    buffer:         int   = 4096
+    buffer: int   = 4096
 
     def open(self,request: HTTPRequest, client: socket.socket = None, close: bool = True) -> HTTPResponse:
 

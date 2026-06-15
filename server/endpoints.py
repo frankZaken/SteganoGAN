@@ -97,7 +97,7 @@ MODELS_TABLE = Table(
 ROOMS_NAME = Field("name", str, primary=False, unique=False, nullable=False)
 ROOMS_ADMIN = Field("admin", str, primary=False, unique=False, nullable=False)
 ROOMS_MEMBERS = Field("members", str, primary=False, unique=False, nullable=False)
-ROOMS_MODEL_NAMES = Field("model_names", str, primary=False, unique=False, nullable=False)
+ROOMS_MODELS = Field("model_names", str, primary=False, unique=False, nullable=False)
 
 ROOMS_TABLE = Table(
     name="rooms",
@@ -105,7 +105,7 @@ ROOMS_TABLE = Table(
         ROOMS_NAME,
         ROOMS_ADMIN,
         ROOMS_MEMBERS,
-        ROOMS_MODEL_NAMES
+        ROOMS_MODELS
     )
 )
 
@@ -286,15 +286,15 @@ def signup(request: HTTPRequest) -> HTTPResponse:
 
     return HTTPResponse(status=200, message="OK")
 
-def get_model_names(request: HTTPRequest) -> HTTPResponse:
+def get_models_info(request: HTTPRequest) -> HTTPResponse:
     """
-    Returns the list of model names accessible by the user.
+    Returns the dict of models info accessible by the user.
 
     request body:
         token: JWT token
 
     response body:
-        model_names: list[str]
+        models_info: list[str]
     """
 
     try:
@@ -308,15 +308,16 @@ def get_model_names(request: HTTPRequest) -> HTTPResponse:
         Select(table=MODELS_TABLE).where(MODELS_CREATOR == value(username))
     )
 
-    model_names = []
+    models: dict[str, list[str]] = {}
 
     for row in ENGINE.execute(select_user_auth):
-        model_names.append(
-            row.get(MODELS_MODEL_NAME.name)
-        )
+        models[row.get(MODELS_MODEL_NAME.name)] = [
+            row.get(MODELS_MODEL_DESCRIPTION.name),
+            row.get(MODELS_CREATOR.name)
+        ]
 
     return HTTPResponse(
-        body=json.dumps({"model_names": model_names}).encode(),
+        body=json.dumps({"models_info": models}).encode(),
         status=200,
         message="OK"
     )
@@ -371,7 +372,7 @@ def create_room(request: HTTPRequest) -> HTTPResponse:
                 ROOMS_NAME: room_name,
                 ROOMS_ADMIN: username,
                 ROOMS_MEMBERS: json.dumps(room_members),
-                ROOMS_MODEL_NAMES: json.dumps([])
+                ROOMS_MODELS: json.dumps({})
             }
         ]
     )
@@ -393,8 +394,8 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
         token: JWT token
 
         name: str
-        model_names: list[str] | None
-        members: list[str] | None  # other user names.
+        models_info: dict[str, (str, str)] | None
+        members: list[str] | None  # other usernames.
     """
 
     try:
@@ -421,7 +422,7 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
             else:
                 return HTTPResponse(status=404, message="member not found.")
 
-    new_model_names = request_body.get("model_names")
+    new_models: dict[str, tuple[str, str]] = request_body.get("models_info")
     admin_rooms_statement = (ROOMS_NAME == value(room_name)) & (ROOMS_ADMIN == value(username))
 
     select_room = (
@@ -443,14 +444,14 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
     if new_members is not None:
         updated_fields[ROOMS_MEMBERS] = json.dumps(new_members)
 
-    if new_model_names is not None:
-        admin_models = set(json.loads(get_model_names(request).body)["model_names"])
-        new_models = set(new_model_names)
+    if new_models is not None:
+        admin_models_info: dict = json.loads(get_models_info(request).body)["models_info"]
 
-        if not new_models.issubset(admin_models):
+        if not set(new_models).issubset(admin_models_info.keys()):
             return HTTPResponse(status=404, message="invalid models list.")
 
-        updated_fields[ROOMS_MODEL_NAMES] = json.dumps(new_model_names)
+        models_dict = {name: admin_models_info[name] for name in new_models}
+        updated_fields[ROOMS_MODELS] = json.dumps(models_dict)
 
     if not updated_fields:
         return HTTPResponse(status=400, message="nothing to update")
@@ -465,6 +466,85 @@ def update_room(request: HTTPRequest) -> HTTPResponse:
     ENGINE.commit()
 
     return HTTPResponse(status=200, message="OK")
+
+
+def get_rooms(request: HTTPRequest) -> HTTPResponse:
+    """
+    Returns all rooms the authenticated user is a member of.
+
+    request headers:
+        token: JWT token
+
+    response body:
+        rooms: list of {name, admin, members, models}
+    """
+    try:
+        username = auth_token(request)
+
+    except:
+        return HTTPResponse(status=404, message="invalid token/token not found.")
+
+    all_rooms = ENGINE.execute(Select(table=ROOMS_TABLE))
+    user_rooms = [
+        {
+            "name": row[ROOMS_NAME.name],
+            "admin": row[ROOMS_ADMIN.name],
+            "members": json.loads(row[ROOMS_MEMBERS.name]),
+            "models": json.loads(row[ROOMS_MODELS.name]),
+        }
+
+        for row in all_rooms
+        if username in json.loads(row[ROOMS_MEMBERS.name])
+    ]
+
+    return HTTPResponse(
+        body=json.dumps({"rooms": user_rooms}).encode(),
+        status=200,
+        message="OK"
+    )
+
+
+def get_room_models(request: HTTPRequest) -> HTTPResponse:
+    """
+    Returns the models of a room the authenticated user is a member of.
+
+    request headers:
+        token: JWT token
+
+    request body:
+        room_name: str
+
+    response body:
+        models: dict[model_name, [description, creator]]
+    """
+    try:
+        username = auth_token(request)
+
+    except:
+        return HTTPResponse(status=404, message="invalid token/token not found.")
+
+    request_body = json.loads(request.body)
+    room_name = request_body["room_name"]
+    admin = request_body["admin"]
+
+    room_row = next(iter(ENGINE.execute(
+        Select(table=ROOMS_TABLE)
+        .where((ROOMS_NAME == value(room_name)) & (ROOMS_ADMIN == value(admin)))
+    )), None)
+
+    if room_row is None:
+        return HTTPResponse(status=404, message="room not found.")
+
+    if username not in json.loads(room_row[ROOMS_MEMBERS.name]):
+        return HTTPResponse(status=404, message="room not found.")
+
+    models: dict = json.loads(room_row[ROOMS_MODELS.name])
+
+    return HTTPResponse(
+        body=json.dumps({"models_info": models}).encode(),
+        status=200,
+        message="OK"
+    )
 
 
 def _finetune_endpoint(
@@ -582,7 +662,7 @@ def train_model(request: HTTPRequest) -> HTTPResponse:
     ).values(
         [
             {
-                MODELS_MODEL_PATH: "None",
+                MODELS_MODEL_PATH: finetuned_model_path,
                 MODELS_CREATOR: username,
                 MODELS_MODEL_NAME: model_name,
                 MODELS_MODEL_DESCRIPTION: model_description,
@@ -702,17 +782,19 @@ def model_training_done(request: HTTPRequest) -> HTTPResponse:
 
 def stego_encode(request: HTTPRequest) -> HTTPResponse:
     """
-    Encodes a hidden message inside the original image of the model.
+    Encodes a hidden message inside the provided image using the selected model.
 
     request body:
         token: JWT token
 
+        image_data: str  (base64 of compressed image bytes)
         model_name: str
         model_creator: str
+        room_name: str
         message: str
 
     response body:
-        stego_image: str  (bytes of png)
+        stego_image: str  (base64 of compressed png bytes)
     """
 
     try:
@@ -723,11 +805,32 @@ def stego_encode(request: HTTPRequest) -> HTTPResponse:
 
     request_body = json.loads(request.body)
 
+    image_data = decompress(base64.b64decode(request_body["image_data"].encode()))
     model_name = request_body["model_name"]
     creator = request_body["model_creator"]
+    room_name = request_body["room_name"]
     message = request_body["message"]
 
-    if creator != username:
+
+    if room_name is not None:
+        find_model_in_room = (
+            Select(table=ROOMS_TABLE)
+            .where((ROOMS_NAME == value(room_name)) & (ROOMS_ADMIN == value(creator)))
+        )
+
+        found_room: dict[str, str] | None = next(iter(ENGINE.execute(find_model_in_room)), None)
+
+        if found_room is None:
+            return HTTPResponse(status=404, message="room doesn't exist.")
+
+        for current_model_name in json.loads(found_room[ROOMS_MODELS.name]):
+            if current_model_name == model_name:
+                break
+
+        else:
+            return HTTPResponse(status=404, message="model was not found in this room.")
+
+    elif creator != username:
         return HTTPResponse(status=404, message="creator must be the user.")
 
     select_model = (
@@ -740,16 +843,18 @@ def stego_encode(request: HTTPRequest) -> HTTPResponse:
     if selected_model_data is None:
         return HTTPResponse(status=404, message="model doesn't exist.")
 
-    selected_model_data: dict[str, str]
     model_path = selected_model_data[MODELS_MODEL_PATH.name]
-    original_image_path = selected_model_data[MODELS_ORIGINAL_IMAGE_PATH.name]
 
-    stego_images_dir = SERVER_DATA_ROOT / "stego_images" / username
-    stego_image_path = stego_images_dir / model_name / f"{model_name}_stego_image.png"
-    stego_image_path.parent.mkdir(parents=True, exist_ok=True)
+    stego_images_dir = SERVER_DATA_ROOT / "stego_images" / username / model_name
+    stego_images_dir.mkdir(parents=True, exist_ok=True)
+
+    cover_image_path = stego_images_dir / f"{model_name}_cover_image.png"
+    cover_image_path.write_bytes(image_data)
+
+    stego_image_path = stego_images_dir / f"{model_name}_stego_image.png"
 
     encode(
-        image_path=original_image_path,
+        image_path=str(cover_image_path),
         message=message,
         checkpoint_path=model_path,
         output_path=str(stego_image_path),
@@ -791,9 +896,28 @@ def stego_decode(request: HTTPRequest) -> HTTPResponse:
 
     image_data = decompress(base64.b64decode(request_body["stego_image"].encode()))
     model_name = request_body["model_name"]
+    room_name = request_body["room_name"]
     creator = request_body["model_creator"]
 
-    if creator != username:
+    if room_name is not None:
+        find_model_in_room = (
+            Select(table=ROOMS_TABLE)
+            .where((ROOMS_NAME == value(room_name)) & (ROOMS_ADMIN == value(creator)))
+        )
+
+        found_room: dict[str, str] | None = next(iter(ENGINE.execute(find_model_in_room)), None)
+
+        if found_room is None:
+            return HTTPResponse(status=404, message="room doesn't exist.")
+
+        for current_model_name in json.loads(found_room[ROOMS_MODELS.name]):
+            if current_model_name == model_name:
+                break
+
+        else:
+            return HTTPResponse(status=404, message="model was not found in this room.")
+
+    elif creator != username:
         return HTTPResponse(status=404, message="creator must be the user.")
 
     select_model = (
@@ -801,7 +925,7 @@ def stego_decode(request: HTTPRequest) -> HTTPResponse:
         .where((MODELS_CREATOR == value(creator)) & (MODELS_MODEL_NAME == value(model_name)))
     )
 
-    selected_model_data = next(iter(ENGINE.execute(select_model)), None)
+    selected_model_data: dict[str, str] | None = next(iter(ENGINE.execute(select_model)), None)
 
     if selected_model_data is None:
         return HTTPResponse(status=404, message="model doesn't exist.")
@@ -1021,7 +1145,7 @@ def main():
     test_create_room()
     test_update_room()
 
-    # test_get_model_names()
+    test_get_model_names()
 
     test_train_model()
     test_stego_encode()

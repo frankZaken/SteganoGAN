@@ -3,10 +3,11 @@
 
 from httpio import HTTPServer, HTTPEndpoint
 
-from endpoints import update_room, create_room, train_model, get_model_names, login, signup, stego_encode, stego_decode
+from endpoints import update_room, create_room, train_model, get_models_info, login, signup, stego_encode, stego_decode, \
+    get_rooms, get_room_models
 from server.endpoints import get_model_status, model_training_done
 
-IP = "192.168.0.85"
+IP = "127.0.0.1"
 PORT = 8080
 
 
@@ -28,7 +29,7 @@ def start_server():
             HTTPEndpoint(
                 uri="/models",
                 method="POST",
-                endpoint=get_model_names
+                endpoint=get_models_info
             ),
 
             HTTPEndpoint(
@@ -41,6 +42,18 @@ def start_server():
                 uri="/room/update",
                 method="POST",
                 endpoint=update_room
+            ),
+
+            HTTPEndpoint(
+                uri="/room/get_room_models",
+                method="POST",
+                endpoint=get_room_models
+            ),
+
+            HTTPEndpoint(
+                uri="/room/get_rooms",
+                method="POST",
+                endpoint=get_rooms
             ),
 
             HTTPEndpoint(

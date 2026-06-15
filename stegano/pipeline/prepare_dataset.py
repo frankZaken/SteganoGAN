@@ -143,7 +143,7 @@ def extract_real_crops(
 def prepare_dataset(
     image_path:    str,
     output_dir:    str,
-    num_images:    int   = 200,
+    num_images:    int   = 100,
     num_real_crops: int  = 50,
     sd_size:       int   = 512,
     strength_min:  float = 0.25,
