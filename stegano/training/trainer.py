@@ -10,9 +10,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 import torchvision
 
-from ..gan.generator     import InvertibleGenerator
-from ..gan.discriminator import Discriminator
-from ..core.message      import pack_message, unpack_message
+from stegano.gan.generator     import InvertibleGenerator
+from stegano.gan.discriminator import Discriminator
+from stegano.core.message      import pack_message, unpack_message
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -103,9 +103,9 @@ def train():
     )
     print(f"Training on: {device}")
 
-    base       = Path(__file__).parent.parent.parent   # SteganoGAN2/
-    ckpt_dir   = base / "stegano2" / "training" / "checkpoints"
-    sample_dir = base / "stegano2" / "training" / "samples"
+    base       = Path(__file__).parent.parent.parent   # project root
+    ckpt_dir   = base / "stegano" / "training" / "checkpoints"
+    sample_dir = base / "stegano" / "training" / "samples"
     ckpt_dir.mkdir(exist_ok=True)
     sample_dir.mkdir(exist_ok=True)
 

@@ -1,4 +1,5 @@
 # stegano2/training/finetuner.py
+
 from collections.abc import Callable
 
 import torch
@@ -10,10 +11,12 @@ from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 
-from ..gan.generator     import InvertibleGenerator, MSG_CH_START, MSG_CH_END, squeeze as gen_squeeze
-from ..gan.discriminator import Discriminator
-from ..core.message      import pack_message, unpack_message
-from ..core.image import save_16bit_png, load_image
+from pipeline.prepare_dataset import prepare_dataset
+from stegano.gan.generator     import InvertibleGenerator, MSG_CH_START, MSG_CH_END, squeeze as gen_squeeze
+from stegano.gan.discriminator import Discriminator
+from stegano.core.message      import pack_message, unpack_message
+from stegano.core.image import save_16bit_png, load_image
+
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -259,13 +262,25 @@ def finetune(
 # ── Run ────────────────────────────────────────────────────────────────────────
 
 def main():
-    base = Path(__file__).parent.parent.parent   # SteganoGAN2/
-    finetune(
-        dataset_dir=     str(base / "input" / "variations"),
-        base_checkpoint= str(base / "stegano2" / "training" / "checkpoints" / "checkpoint_epoch_0015.pt"),
-        output_path=     str(base / "stegano2" / "training" / "checkpoints" / "finetuned.pt"),
-        target_image=    str(base / "input" / "photo.jpg"),
+    base = Path(__file__).parent.parent.parent   # project root
+
+    original_image_path = str(base / "cat_original.jpg")
+    dataset_path = str(base / "testing_new_finetune" / "variations")
+
+    prepare_dataset(
+        image_path=original_image_path,
+        output_dir=dataset_path,
+        num_images=50,
+        num_real_crops=100
     )
+
+    for _ in finetune(
+        dataset_dir=     dataset_path,
+        base_checkpoint= str(base / "stegano" / "training" / "checkpoints" / "checkpoint_epoch_0005.pt"),
+        output_path=     str(base / "stegano" / "training" / "checkpoints" / "finetuned.pt"),
+        target_image=    original_image_path,
+    ):
+        pass
 
 
 if __name__ == "__main__":

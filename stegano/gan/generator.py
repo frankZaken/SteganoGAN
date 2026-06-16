@@ -11,23 +11,48 @@ MSG_CH_START = 8
 MSG_CH_END   = 12
 
 
+# def squeeze(x: Tensor) -> Tensor:
+#     B, C, H, W = x.shape
+#
+#     x = x.reshape(B, C, H//2, 2, W//2, 2)
+#     x = x.permute(0, 1, 3, 5, 2, 4)
+#     x = x.reshape(B, C*4, H//2, W//2)
+#
+#     return x
+#
+# def unsqueeze(x: Tensor) -> Tensor:
+#     B, C4, Hs, Ws = x.shape
+#     C = C4 // 4
+#
+#     x = x.reshape(B, C, 2, 2, Hs, Ws)
+#     x = x.permute(0, 1, 4, 2, 5, 3)
+#     x = x.reshape(B, C, Hs*2, Ws*2)
+#
+#     return x
+
+_PERM     = torch.tensor([0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11])
+_INV_PERM = torch.argsort(_PERM)
+
+
 def squeeze(x: Tensor) -> Tensor:
     B, C, H, W = x.shape
 
-    x = x.reshape(B, C, H//2, 2, W//2, 2)
+    x = x.reshape(B, C, H // 2, 2, W // 2, 2)
     x = x.permute(0, 1, 3, 5, 2, 4)
-    x = x.reshape(B, C*4, H//2, W//2)
+    x = x.reshape(B, C * 4, H // 2, W // 2)
 
-    return x
+    return x[:, _PERM.to(x.device)]            # shuffle channels
 
 
 def unsqueeze(x: Tensor) -> Tensor:
+    x = x[:, _INV_PERM.to(x.device)]           # de-shuffle first
+
     B, C4, Hs, Ws = x.shape
     C = C4 // 4
 
     x = x.reshape(B, C, 2, 2, Hs, Ws)
     x = x.permute(0, 1, 4, 2, 5, 3)
-    x = x.reshape(B, C, Hs*2, Ws*2)
+    x = x.reshape(B, C, Hs * 2, Ws * 2)
 
     return x
 
@@ -60,7 +85,7 @@ class InvertibleGenerator(nn.Module):
     def __init__(self, hidden_channels: int = 64, num_layers: int = 8):
         super().__init__()
 
-        latent_channels = 12
+        latent_channels = MSG_CH_END
         self.coupling_layers = nn.ModuleList(
             [
                 AffineCouplingLayer(
