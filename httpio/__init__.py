@@ -1,4 +1,4 @@
-# httpio/__init__.pi
+# httpio/__init__.py
 
 from .request  import HTTPRequest,  load_request
 from .response import HTTPResponse, load_response

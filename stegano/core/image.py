@@ -37,23 +37,23 @@ def load_image(path) -> tuple[Tensor, ImageSize]:
 
 def save_stego(tensor: Tensor, path: str):
     """
-    Save stego as a valid 16-bit PNG (viewable) with exact float32 data
-    embedded in a private PNG chunk (ftNs). Image viewers display the
-    16-bit visuals and ignore the unknown chunk; the decoder reads exact
-    float32 from the chunk — no rounding in the decode path.
+    Save stego as an 8-bit PNG (browser/viewer-compatible) with exact float32
+    data embedded in a private PNG chunk (ftNs). The 8-bit visual is what
+    browsers and Flet display; the decoder reads exact float32 from ftNs with
+    zero quantization error.
     """
     if tensor.ndim == 4:
         tensor = tensor.squeeze(0)
     assert tensor.ndim == 3 and tensor.shape[0] == 3
 
-    x_np = ((tensor + 1.0) * 0.5 * 65535.0).clamp(0, 65535)
-    x_np = x_np.cpu().numpy().astype(np.uint16).transpose(1, 2, 0)
+    x_np = ((tensor + 1.0) * 0.5 * 255.0).clamp(0, 255)
+    x_np = x_np.cpu().numpy().astype(np.uint8).transpose(1, 2, 0)
     h, w = x_np.shape[:2]
 
     raw = bytearray()
     for y in range(h):
         raw.append(0)
-        raw.extend(x_np[y].byteswap().tobytes())
+        raw.extend(x_np[y].tobytes())
     compressed_idat = zlib.compress(bytes(raw), level=9)
 
     float_bytes = tensor.cpu().numpy().astype(np.float32).tobytes()
@@ -67,7 +67,7 @@ def save_stego(tensor: Tensor, path: str):
             struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
         )
 
-    ihdr = struct.pack(">IIBBBBB", w, h, 16, 2, 0, 0, 0)
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
     png  = b"\x89PNG\r\n\x1a\n"
     png += chunk(b"IHDR", ihdr)
     png += chunk(b"IDAT", compressed_idat)
@@ -82,30 +82,40 @@ def load_stego(path: str) -> Tensor:
     """
     Load a stego PNG saved by save_stego.
     Reads exact float32 from the ftNs chunk — zero quantization error.
+    Falls back to pixel data for files without the chunk (old 16-bit or plain 8-bit).
     """
     raw = open(path, "rb").read()
     pos = 8
     width = height = 0
+    bit_depth = 8
     float_data = None
 
     while pos < len(raw):
-        length              = struct.unpack(">I", raw[pos:pos+4])[0]
-        tag                 = raw[pos+4:pos+8]
-        data                = raw[pos+8:pos+8+length]
-        pos                += 12 + length
+        length     = struct.unpack(">I", raw[pos:pos+4])[0]
+        tag        = raw[pos+4:pos+8]
+        data       = raw[pos+8:pos+8+length]
+        pos       += 12 + length
 
         if tag == b"IHDR":
             width, height = struct.unpack(">II", data[:8])
+            bit_depth = data[8]
         elif tag == b"ftNs":
             float_data = zlib.decompress(data)
         elif tag == b"IEND":
             break
 
-    if float_data is None:
+    if float_data is not None:
+        arr    = np.frombuffer(float_data, dtype=np.float32).reshape(3, height, width)
+        tensor = torch.from_numpy(arr.copy())
+        return tensor.unsqueeze(0)
+
+    if bit_depth == 16:
         return load_16bit_png(path)
 
-    arr    = np.frombuffer(float_data, dtype=np.float32).reshape(3, height, width)
-    tensor = torch.from_numpy(arr.copy())
+    # 8-bit PNG without ftNs chunk: load via PIL
+    img    = Image.open(path).convert("RGB")
+    tensor = T.ToTensor()(img)   # [0, 1]
+    tensor = tensor * 2.0 - 1.0  # [-1, 1]
     return tensor.unsqueeze(0)
 
 

@@ -3,32 +3,30 @@
 import socket
 from dataclasses import dataclass
 
-from .request  import HTTPRequest
-from .response import HTTPResponse, load_response
+from httpio.request  import HTTPRequest
+from httpio.response import HTTPResponse, load_response
 
 
 @dataclass
 class HTTPClient:
     server_address: tuple
     client_address: tuple = None
-    buffer: int   = 4096
+    buffer: int = 4096
 
-    def open(self,request: HTTPRequest, client: socket.socket = None, close: bool = True) -> HTTPResponse:
+    # ── transport hooks (plaintext defaults; SecureHTTPClient overrides these) ──
+    def _handshake(self, sock: socket.socket):
+        return None
 
-        if client is None:
-            client = socket.socket()
+    def _send(self, sock: socket.socket, data: bytes, ctx):
+        sock.send(data)
 
-            if self.client_address is not None:
-                client.bind(self.client_address)
-
-            client.connect(self.server_address)
-        client.send(request.dump())
+    def _recv(self, sock: socket.socket, ctx) -> bytes:
 
         sep  = b"\r\n\r\n"
         data = b""
 
         while sep not in data:
-            chunk = client.recv(self.buffer)
+            chunk = sock.recv(self.buffer)
 
             if not chunk:
                 break
@@ -36,7 +34,8 @@ class HTTPClient:
             data += chunk
 
         if sep in data:
-            header_end = data.index(sep)
+
+            header_end  = data.index(sep)
             headers_raw = data[:header_end]
             body_so_far = data[header_end + 4:]
             content_length = 0
@@ -48,13 +47,29 @@ class HTTPClient:
 
             while len(body_so_far) < content_length:
                 needed = content_length - len(body_so_far)
-                chunk  = client.recv(min(self.buffer, needed))
+                chunk  = sock.recv(min(self.buffer, needed))
 
                 if not chunk:
                     break
 
                 body_so_far += chunk
             data = headers_raw + sep + body_so_far
+
+        return data
+
+    def open(self, request: HTTPRequest, client: socket.socket = None, close: bool = True) -> HTTPResponse:
+
+        if client is None:
+            client = socket.socket()
+
+            if self.client_address is not None:
+                client.bind(self.client_address)
+
+            client.connect(self.server_address)
+
+        ctx = self._handshake(client)
+        self._send(client, request.dump(), ctx)
+        data = self._recv(client, ctx)
 
         if close:
             client.close()

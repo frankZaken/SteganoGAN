@@ -556,7 +556,7 @@ def _finetune_endpoint(
 ):
     yield from finetune(
         dataset_dir=dataset_dir,
-        base_checkpoint=str(PROJECT_ROOT / "stegano" / "training" / "checkpoints" / "checkpoint_epoch_0050.pt"),
+        base_checkpoint=str(PROJECT_ROOT / "stegano" / "training" / "checkpoints" / "checkpoint_epoch_0010.pt"),
         target_image=target_image,
         output_path=output_path
     )
@@ -579,29 +579,35 @@ status_tracker = StatusTracker()
 
 def run_and_track(generator, tracker_obj, username: str, model_name: str):
 
-    for s in generator:
-        tracker_obj.status = s
+    try:
+        for s in generator:
+            tracker_obj.status = s
+
+            update_status = (
+                Update(table=MODELS_TABLE)
+                .set({MODELS_MODEL_STATUS: tracker_obj.status})
+                .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name)))
+            )
+
+            ENGINE.execute(update_status)
+            ENGINE.commit()
+
+            print(f"[TRACKER] Live Status Updated: {tracker_obj.status}")
 
         update_status = (
             Update(table=MODELS_TABLE)
-            .set({MODELS_MODEL_STATUS: tracker_obj.status})
-            .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name)))
+            .set({MODELS_MODEL_STATUS: 100})
+            .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name))
+            )
         )
 
         ENGINE.execute(update_status)
         ENGINE.commit()
 
-        print(f"[TRACKER] Live Status Updated: {tracker_obj.status}")
-
-    update_status = (
-        Update(table=MODELS_TABLE)
-        .set({MODELS_MODEL_STATUS: 100})
-        .where((MODELS_CREATOR == value(username)) & (MODELS_MODEL_NAME == value(model_name))
-        )
-    )
-
-    ENGINE.execute(update_status)
-    ENGINE.commit()
+    except Exception:
+        import traceback
+        print(f"[TRACKER] training thread crashed for {username}/{model_name}:")
+        traceback.print_exc()
 
 
 def train_model(request: HTTPRequest) -> HTTPResponse:
