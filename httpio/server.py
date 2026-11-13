@@ -60,7 +60,6 @@ class HTTPServer:
 
         return headers_raw + sep + body_so_far
 
-    # ── transport hooks (plaintext defaults; SecureHTTPServer overrides these) ──
     def _handshake(self, sock: socket.socket):
         return None
 
@@ -68,7 +67,7 @@ class HTTPServer:
         return self._recv_full(sock)
 
     def _send(self, sock: socket.socket, data: bytes, ctx):
-        sock.send(data)                               # plaintext: raw bytes
+        sock.send(data)
 
     def handle(self, client: socket.socket | None = None, close: bool = True):
         if client is None:
@@ -120,7 +119,6 @@ class HTTPServer:
             client.close()
 
     def serve_forever(self, address: tuple[str, int]):
-        """Accept connections in a loop, dispatching each to a daemon thread."""
         self.open(address)
         print(f"[server] listening on {address[0]}:{address[1]}")
 

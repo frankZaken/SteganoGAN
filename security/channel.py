@@ -1,8 +1,5 @@
 # security/channel.py
 
-# Encrypted, authenticated transport: per-connection DHE key agreement
-# (server authenticated with RSA), keys expanded with KDF2, records sealed
-# with AES-128-CTR + HMAC-SHA256 (encrypt-then-MAC).
 
 import secrets
 
@@ -30,7 +27,6 @@ class SecurityError(Exception):
     pass
 
 
-# ── key expansion (KDF2) ─────────────────────────────────────────────────────
 def _derive_keys(shared: bytes):
     def k(label: bytes, size: int) -> bytes:
         return KDF2("sha256", shared + label, size).digest()

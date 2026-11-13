@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from sympy import nextprime
 
 
-# ----------------------------
-#  Prime helpers
-# ----------------------------
+
 def rand_prime_bits_size(size: int) -> int:
     prime = int(nextprime(secrets.randbits(size)))
 
@@ -43,9 +41,6 @@ def distant_random_primes(size: int) -> tuple[int, int]:
     return distant_random_prime(q, p, size)
 
 
-# ----------------------------
-#  Key dataclasses
-# ----------------------------
 @dataclass
 class PublicKey:
     n: int
@@ -57,9 +52,6 @@ class PrivateKey:
     d: int
 
 
-# ----------------------------
-#  RSA core
-# ----------------------------
 def rsa_keys(primes: tuple[int, int]) -> tuple[PrivateKey, PublicKey]:
     p, q = primes
     n = p * q
@@ -87,9 +79,6 @@ def verify(data: int, signature: int, key: PublicKey) -> bool:
     return data == pow(signature, key.e, key.n)
 
 
-# ----------------------------
-#  BYTES API
-# ----------------------------
 def _chunk_size_for_n(n: int) -> int:
     return (n.bit_length() - 1) // 8
 
@@ -163,9 +152,6 @@ def load_public_key(payload: bytes) -> PublicKey:
     return PublicKey(n, e)
 
 
-# ----------------------------
-#  RSA class for communication
-# ----------------------------
 @dataclass
 class RSA:
     my_public_key: PublicKey
@@ -208,9 +194,6 @@ class RSA:
         return message
 
 
-# ----------------------------
-#  Tests & demo
-# ----------------------------
 def test():
     print("=== RSA keys making ===")
     primes = distant_random_primes(256)

@@ -18,21 +18,17 @@ from stegano.core.message      import pack_message, unpack_message
 from stegano.core.image import save_16bit_png, load_image
 
 
-# ── Configuration ──────────────────────────────────────────────────────────────
-
-IMAGE_SIZE   = 154
-BATCH_SIZE   = 2
-NUM_EPOCHS   = 20
-LR           = 5e-5
-LAMBDA_ADV   = 0.01
-LAMBDA_IMG   = 10.0
-LAMBDA_MSG   = 0.5    # message fidelity through quantization
-LAMBDA_COLOR = 20.0   # penalise per-channel mean shift (global colour cast)
-LAMBDA_FREQ  = 5.0    # penalise low-frequency content in the stego−cover diff
+IMAGE_SIZE = 154
+BATCH_SIZE = 2
+NUM_EPOCHS = 20
+LR = 5e-5
+LAMBDA_ADV = 0.01
+LAMBDA_IMG = 10.0
+LAMBDA_MSG = 0.5
+LAMBDA_COLOR = 20.0
+LAMBDA_FREQ = 5.0
 TEST_MESSAGE = "Iti is dumb!"
 
-
-# ── Dataset ────────────────────────────────────────────────────────────────────
 
 class ImageFolderWithBits(Dataset):
     EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -60,16 +56,12 @@ class ImageFolderWithBits(Dataset):
         return img, bits
 
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
-
 def compute_psnr(cover: torch.Tensor, stego: torch.Tensor) -> float:
     mse = nn.functional.mse_loss(cover, stego).item()
     if mse == 0:
         return float("inf")
     return 10 * torch.log10(torch.tensor(1.0 / mse)).item()
 
-
-# ── Frequency loss ────────────────────────────────────────────────────────────
 
 def low_freq_energy(diff: torch.Tensor, pool: int = 16) -> torch.Tensor:
     """
@@ -81,15 +73,11 @@ def low_freq_energy(diff: torch.Tensor, pool: int = 16) -> torch.Tensor:
     return torch.nn.functional.avg_pool2d(diff.abs(), kernel_size=pool, stride=pool).mean()
 
 
-# ── Quantization simulation ────────────────────────────────────────────────────
-
 def quantize_like_16bit_png(stego: torch.Tensor) -> torch.Tensor:
     display   = (stego * 0.5 + 0.5).clamp(0, 1)
     quantized = (display * 65535.0).round() / 65535.0
     return quantized * 2.0 - 1.0
 
-
-# ── Fine-tuning loop ───────────────────────────────────────────────────────────
 
 def get_status(epoch: int, num_epochs: int) -> int:
     return round((epoch / num_epochs) * 100)
@@ -258,8 +246,6 @@ def finetune(
     print(f"\n✓ Fine-tuning complete. Best PSNR: {best_psnr:.2f} dB")
     print(f"  Fine-tuned model: {out_path}")
 
-
-# ── Run ────────────────────────────────────────────────────────────────────────
 
 def main():
     base = Path(__file__).parent.parent.parent   # project root

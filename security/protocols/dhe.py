@@ -52,7 +52,7 @@ class UDPKeyEstablishing:
 @dataclass
 class TCPKeyEstablishing:
     connection: socket.socket
-    buffer: int  # unused now but keep for compatibility
+    buffer: int
 
     def send(self, data: bytes):
         send_msg(self.connection, data)
@@ -61,26 +61,29 @@ class TCPKeyEstablishing:
         return recv_msg(self.connection)
 
 def send_msg(sock: socket.socket, data: bytes):
-    # Prefix each message with a 4-byte length (network byte order)
     length = struct.pack('!I', len(data))
     sock.sendall(length + data)
 
 def recv_msg(sock: socket.socket) -> bytes:
-    # Read the 4-byte length prefix
     raw_len = recvall(sock, 4)
+
     if not raw_len:
         return b''  # Connection closed or error
+
     msg_len = struct.unpack('!I', raw_len)[0]
-    # Read the message data based on the length
     return recvall(sock, msg_len)
 
 def recvall(sock: socket.socket, n: int) -> bytes:
     # Helper to recv exactly n bytes or return b'' if connection closes early
     data = b''
+
     while len(data) < n:
         packet = sock.recv(n - len(data))
+
         if not packet:
             return b''
+
         data += packet
+
     return data
 

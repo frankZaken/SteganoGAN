@@ -11,7 +11,8 @@ from server.endpoints import get_model_status, model_training_done
 import json
 
 
-IP = "127.0.0.1"
+
+IP = "0.0.0.0"
 PORT = 8080
 
 _keys = Path(__file__).resolve().parent.parent / "data" / "keys" / "server.json"

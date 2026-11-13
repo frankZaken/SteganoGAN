@@ -10,14 +10,6 @@ from sql.query import Query, Insert
 class Engine:
     """
     SQLite engine with a separate connection per thread.
-
-    A single sqlite3 connection is not safe to use from multiple threads at
-    once. The server runs each request in its own thread and trains models in
-    a background thread, so every thread gets its own connection (stored in
-    thread-local storage). WAL mode lets one writer (the training thread) and
-    many readers (status polls, other requests) work at the same time without
-    blocking each other; busy_timeout makes a brief lock wait instead of
-    raising "database is locked".
     """
 
     def __init__(self, path: str = None):
@@ -32,8 +24,8 @@ class Engine:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")     # concurrent reader(s) + writer
-        conn.execute("PRAGMA busy_timeout=5000")    # wait up to 5s on a lock
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys = ON")
         self._local.conn = conn
         return conn
@@ -42,7 +34,7 @@ class Engine:
     def conn(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)
         if conn is None:
-            conn = self._connect()                  # lazily create one for this thread
+            conn = self._connect()
         return conn
 
     def cursor(self) -> sqlite3.Cursor:
